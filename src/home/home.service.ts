@@ -4,6 +4,7 @@ import { readFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { DatabaseService } from '../database/database.service.js';
 import { homeContent } from '../database/schema.js';
+import { arr, href, obj, oneOf, str } from '../common/validate.js';
 import { HOME_DEFAULTS } from './home.defaults.js';
 import {
   CATEGORY_COLORS,
@@ -15,56 +16,6 @@ import {
 
 // Pre-database storage; read once to seed the table, never written.
 const LEGACY_STORE = join(process.cwd(), 'data', 'home.json');
-
-type Obj = Record<string, unknown>;
-
-function obj(v: unknown, path: string): Obj {
-  if (typeof v !== 'object' || v === null || Array.isArray(v)) {
-    throw new BadRequestException(`${path} must be an object`);
-  }
-  return v as Obj;
-}
-
-function str(v: unknown, path: string, max: number, required = true): string {
-  if (typeof v !== 'string') {
-    throw new BadRequestException(`${path} must be a string`);
-  }
-  const s = v.trim();
-  if (required && !s) throw new BadRequestException(`${path} is required`);
-  if (s.length > max) {
-    throw new BadRequestException(`${path} must be at most ${max} characters`);
-  }
-  return s;
-}
-
-/** Internal path ("/x") or absolute http(s) URL. */
-function href(v: unknown, path: string): string {
-  const s = str(v, path, 300);
-  if (!/^\/(?!\/)/.test(s) && !/^https?:\/\//i.test(s)) {
-    throw new BadRequestException(`${path} must start with / or http(s)://`);
-  }
-  return s;
-}
-
-function arr(v: unknown, path: string, max: number): unknown[] {
-  if (!Array.isArray(v))
-    throw new BadRequestException(`${path} must be a list`);
-  if (v.length > max) {
-    throw new BadRequestException(`${path} can have at most ${max} items`);
-  }
-  return v;
-}
-
-function oneOf<T extends string>(
-  v: unknown,
-  list: readonly T[],
-  path: string,
-): T {
-  if (typeof v !== 'string' || !(list as readonly string[]).includes(v)) {
-    throw new BadRequestException(`${path} must be one of ${list.join(', ')}`);
-  }
-  return v as T;
-}
 
 function sanitize(input: unknown): HomeContent {
   const root = obj(input, 'body');
