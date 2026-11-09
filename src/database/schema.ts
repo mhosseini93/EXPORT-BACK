@@ -1,4 +1,6 @@
 import {
+  date,
+  index,
   integer,
   jsonb,
   pgTable,
@@ -7,6 +9,12 @@ import {
   timestamp,
   varchar,
 } from 'drizzle-orm/pg-core';
+import type {
+  BlogCategoryData,
+  BlogPostData,
+  BlogSettings,
+  PostStatus,
+} from '../blog/blog.types.js';
 import type { HomeContent } from '../home/home.types.js';
 import type { PricePageData } from '../prices/prices.types.js';
 
@@ -25,6 +33,47 @@ export const pricePages = pgTable('price_pages', {
   slug: varchar('slug', { length: 80 }).notNull().unique(),
   position: integer('position').notNull().default(0),
   data: jsonb('data').$type<PricePageData>().notNull(),
+  updatedAt: timestamp('updated_at', { withTimezone: true })
+    .notNull()
+    .defaultNow(),
+});
+
+export const blogCategories = pgTable('blog_categories', {
+  id: serial('id').primaryKey(),
+  slug: varchar('slug', { length: 80 }).notNull().unique(),
+  position: integer('position').notNull().default(0),
+  data: jsonb('data').$type<BlogCategoryData>().notNull(),
+  updatedAt: timestamp('updated_at', { withTimezone: true })
+    .notNull()
+    .defaultNow(),
+});
+
+/** Status, date and category are real columns so lists can filter and sort on them. */
+export const blogPosts = pgTable(
+  'blog_posts',
+  {
+    id: serial('id').primaryKey(),
+    slug: varchar('slug', { length: 120 }).notNull().unique(),
+    categoryId: integer('category_id').references(() => blogCategories.id, {
+      onDelete: 'set null',
+    }),
+    status: varchar('status', { length: 16 }).$type<PostStatus>().notNull(),
+    publishedAt: date('published_at'),
+    data: jsonb('data').$type<BlogPostData>().notNull(),
+    updatedAt: timestamp('updated_at', { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+  },
+  (t) => [
+    index('blog_posts_published_idx').on(t.status, t.publishedAt),
+    index('blog_posts_category_idx').on(t.categoryId),
+  ],
+);
+
+/** Single-row table (id = 1) for the /blog page heading, intro and SEO. */
+export const blogSettings = pgTable('blog_settings', {
+  id: smallint('id').primaryKey().default(1),
+  data: jsonb('data').$type<BlogSettings>().notNull(),
   updatedAt: timestamp('updated_at', { withTimezone: true })
     .notNull()
     .defaultNow(),
