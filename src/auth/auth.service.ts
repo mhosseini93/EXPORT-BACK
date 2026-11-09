@@ -13,20 +13,33 @@ export class AuthService {
     return process.env.ADMIN_SECRET ?? 'dev-only-change-me';
   }
 
+  private get username(): string {
+    return process.env.ADMIN_USERNAME ?? 'admin';
+  }
+
   private get password(): string {
-    return process.env.ADMIN_PASSWORD ?? 'admin1234';
+    return process.env.ADMIN_PASSWORD ?? '123456';
   }
 
   private sign(payload: string): string {
-    return createHmac('sha256', this.secret).update(payload).digest('base64url');
+    return createHmac('sha256', this.secret)
+      .update(payload)
+      .digest('base64url');
   }
 
-  login(password: unknown): { token: string; expiresAt: string } {
-    if (
-      typeof password !== 'string' ||
-      !timingSafeEqual(sha256(password), sha256(this.password))
-    ) {
-      throw new UnauthorizedException('Wrong password');
+  login(
+    username: unknown,
+    password: unknown,
+  ): { token: string; expiresAt: string } {
+    // Compare both fields every time so timing does not reveal which one was wrong.
+    const userOk =
+      typeof username === 'string' &&
+      timingSafeEqual(sha256(username), sha256(this.username));
+    const passOk =
+      typeof password === 'string' &&
+      timingSafeEqual(sha256(password), sha256(this.password));
+    if (!userOk || !passOk) {
+      throw new UnauthorizedException('Wrong username or password');
     }
     const exp = Date.now() + TOKEN_TTL_MS;
     const payload = Buffer.from(JSON.stringify({ exp })).toString('base64url');

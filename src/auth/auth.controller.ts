@@ -23,7 +23,10 @@ export class AuthController {
 
   @Post('login')
   @HttpCode(200)
-  login(@Body() body: { password?: unknown } | undefined, @Ip() ip: string) {
+  login(
+    @Body() body: { username?: unknown; password?: unknown } | undefined,
+    @Ip() ip: string,
+  ) {
     const now = Date.now();
     const recent = (this.attempts.get(ip) ?? []).filter(
       (t) => now - t < WINDOW_MS,
@@ -36,7 +39,7 @@ export class AuthController {
     }
     recent.push(now);
     this.attempts.set(ip, recent);
-    const result = this.auth.login(body?.password);
+    const result = this.auth.login(body?.username, body?.password);
     this.attempts.delete(ip);
     return result;
   }
