@@ -17,6 +17,11 @@ import type {
 } from '../blog/blog.types.js';
 import type { HomeContent } from '../home/home.types.js';
 import type { PricePageData } from '../prices/prices.types.js';
+import type {
+  ProjectData,
+  ProjectStatus,
+  ProjectsSettings,
+} from '../projects/projects.types.js';
 
 /** Single-row table (id = 1) holding the editable homepage content. */
 export const homeContent = pgTable('home_content', {
@@ -74,6 +79,27 @@ export const blogPosts = pgTable(
 export const blogSettings = pgTable('blog_settings', {
   id: smallint('id').primaryKey().default(1),
   data: jsonb('data').$type<BlogSettings>().notNull(),
+  updatedAt: timestamp('updated_at', { withTimezone: true })
+    .notNull()
+    .defaultNow(),
+});
+
+/** Reference projects; status is a column so the public list can filter on it. */
+export const projects = pgTable('projects', {
+  id: serial('id').primaryKey(),
+  slug: varchar('slug', { length: 120 }).notNull().unique(),
+  status: varchar('status', { length: 16 }).$type<ProjectStatus>().notNull(),
+  position: integer('position').notNull().default(0),
+  data: jsonb('data').$type<ProjectData>().notNull(),
+  updatedAt: timestamp('updated_at', { withTimezone: true })
+    .notNull()
+    .defaultNow(),
+});
+
+/** Single-row table (id = 1) for the /projects page heading, intro and SEO. */
+export const projectsSettings = pgTable('projects_settings', {
+  id: smallint('id').primaryKey().default(1),
+  data: jsonb('data').$type<ProjectsSettings>().notNull(),
   updatedAt: timestamp('updated_at', { withTimezone: true })
     .notNull()
     .defaultNow(),

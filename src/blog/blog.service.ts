@@ -128,15 +128,13 @@ export class BlogService implements OnApplicationBootstrap {
         )
         .returning({ id: blogCategories.id, slug: blogCategories.slug });
       const ids = new Map(categories.map((c) => [c.slug, c.id]));
-      await tx
-        .insert(blogPosts)
-        .values(
-          BLOG_POST_DEFAULTS.map(({ category, ...post }) => ({
-            ...splitPost({ ...post, categoryId: ids.get(category) ?? null }),
-            // Seeded posts were not edited after publishing, so no "Updated" date is shown.
-            updatedAt: new Date(post.publishedAt),
-          })),
-        );
+      await tx.insert(blogPosts).values(
+        BLOG_POST_DEFAULTS.map(({ category, ...post }) => ({
+          ...splitPost({ ...post, categoryId: ids.get(category) ?? null }),
+          // Seeded posts were not edited after publishing, so no "Updated" date is shown.
+          updatedAt: new Date(post.publishedAt),
+        })),
+      );
     });
     this.logger.log(
       `Seeded ${BLOG_CATEGORY_DEFAULTS.length} blog categories and ${BLOG_POST_DEFAULTS.length} posts`,
