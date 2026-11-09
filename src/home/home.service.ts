@@ -1,6 +1,9 @@
-import { BadRequestException, Injectable } from '@nestjs/common';
-import { mkdir, readFile, rename, writeFile } from 'node:fs/promises';
-import { dirname, join } from 'node:path';
+import { BadRequestException, Injectable, Logger } from '@nestjs/common';
+import { eq } from 'drizzle-orm';
+import { readFile } from 'node:fs/promises';
+import { join } from 'node:path';
+import { DatabaseService } from '../database/database.service.js';
+import { homeContent } from '../database/schema.js';
 import { HOME_DEFAULTS } from './home.defaults.js';
 import {
   CATEGORY_COLORS,
@@ -10,7 +13,8 @@ import {
   type StepIcon,
 } from './home.types.js';
 
-const STORE = join(process.cwd(), 'data', 'home.json');
+// Pre-database storage; read once to seed the table, never written.
+const LEGACY_STORE = join(process.cwd(), 'data', 'home.json');
 
 type Obj = Record<string, unknown>;
 
@@ -43,7 +47,8 @@ function href(v: unknown, path: string): string {
 }
 
 function arr(v: unknown, path: string, max: number): unknown[] {
-  if (!Array.isArray(v)) throw new BadRequestException(`${path} must be a list`);
+  if (!Array.isArray(v))
+    throw new BadRequestException(`${path} must be a list`);
   if (v.length > max) {
     throw new BadRequestException(`${path} can have at most ${max} items`);
   }
@@ -75,7 +80,12 @@ function sanitize(input: unknown): HomeContent {
     hero: {
       badge: str(hero.badge, 'hero.badge', 120, false),
       titleStart: str(hero.titleStart, 'hero.titleStart', 120),
-      titleHighlight: str(hero.titleHighlight, 'hero.titleHighlight', 120, false),
+      titleHighlight: str(
+        hero.titleHighlight,
+        'hero.titleHighlight',
+        120,
+        false,
+      ),
       text: str(hero.text, 'hero.text', 400),
       ctaLabel: str(hero.ctaLabel, 'hero.ctaLabel', 60),
       ctaHref: href(hero.ctaHref, 'hero.ctaHref'),
@@ -146,7 +156,10 @@ function sanitize(input: unknown): HomeContent {
         const p = `articles.items[${i}]`;
         const it = obj(raw, p);
         const date = str(it.date, `${p}.date`, 10);
-        if (!/^\d{4}-\d{2}-\d{2}$/.test(date) || Number.isNaN(Date.parse(date))) {
+        if (
+          !/^\d{4}-\d{2}-\d{2}$/.test(date) ||
+          Number.isNaN(Date.parse(date))
+        ) {
           throw new BadRequestException(`${p}.date must be YYYY-MM-DD`);
         }
         return {
@@ -162,30 +175,56 @@ function sanitize(input: unknown): HomeContent {
 
 @Injectable()
 export class HomeService {
-  private cache: HomeContent | null = null;
+  private readonly logger = new Logger(HomeService.name);
+
+  constructor(private readonly database: DatabaseService) {}
+
+  private get db() {
+    return this.database.db;
+  }
 
   async get(): Promise<HomeContent> {
-    if (this.cache) return this.cache;
-    try {
-      this.cache = JSON.parse(await readFile(STORE, 'utf8')) as HomeContent;
-    } catch (err) {
-      if ((err as NodeJS.ErrnoException).code !== 'ENOENT') throw err;
-      this.cache = await this.write(structuredClone(HOME_DEFAULTS));
-    }
-    return this.cache;
+    const row = await this.read();
+    if (row) return row;
+    await this.db
+      .insert(homeContent)
+      .values({ id: 1, content: await this.initialContent() })
+      .onConflictDoNothing();
+    return (await this.read())!;
   }
 
   async update(input: unknown): Promise<HomeContent> {
-    const next = { ...sanitize(input), updatedAt: new Date().toISOString() };
-    this.cache = await this.write(next);
-    return this.cache;
+    const content = sanitize(input);
+    const updatedAt = new Date();
+    await this.db
+      .insert(homeContent)
+      .values({ id: 1, content, updatedAt })
+      .onConflictDoUpdate({
+        target: homeContent.id,
+        set: { content, updatedAt },
+      });
+    return { ...content, updatedAt: updatedAt.toISOString() };
   }
 
-  private async write(content: HomeContent): Promise<HomeContent> {
-    await mkdir(dirname(STORE), { recursive: true });
-    const tmp = `${STORE}.tmp`;
-    await writeFile(tmp, JSON.stringify(content, null, 2), 'utf8');
-    await rename(tmp, STORE);
-    return content;
+  private async read(): Promise<HomeContent | null> {
+    const [row] = await this.db
+      .select()
+      .from(homeContent)
+      .where(eq(homeContent.id, 1));
+    return row
+      ? { ...row.content, updatedAt: row.updatedAt.toISOString() }
+      : null;
+  }
+
+  /** First run: import the old data/home.json if it exists, else defaults. */
+  private async initialContent(): Promise<Omit<HomeContent, 'updatedAt'>> {
+    try {
+      const legacy: unknown = JSON.parse(await readFile(LEGACY_STORE, 'utf8'));
+      const content = sanitize(legacy);
+      this.logger.log('Imported homepage content from data/home.json');
+      return content;
+    } catch {
+      return structuredClone(HOME_DEFAULTS);
+    }
   }
 }
